@@ -1,9 +1,9 @@
 using Client.Controls;
 using Client.Envir;
-using SharpDX.Direct2D1;
-using SharpDX.Direct2D1.Effects;
-using SharpDX.Direct3D11;
-using SharpDX.Mathematics.Interop;
+using Vortice.Direct2D1;
+using Vortice.Direct2D1.Effects;
+using Vortice.Direct3D11;
+using Vortice.Mathematics;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -90,10 +90,6 @@ namespace Client.Rendering.SharpDXD3D11
 
                 SharpDXD3D11Manager.EndDraw();
                 return true;
-            }
-            catch (SharpDX.SharpDXException ex)
-            {
-                CEnvir.SaveException(ex);
             }
             catch (Exception ex)
             {
