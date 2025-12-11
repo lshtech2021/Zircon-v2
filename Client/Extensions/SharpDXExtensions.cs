@@ -154,17 +154,10 @@ public static class SharpDXColorExtensions
     }
 }
 
-// Vortice.Direct3D9 Extensions
+// Vortice.Direct3D9 Extensions for convenience
 public static class VorticeD3D9Extensions
 {
-    public static void Draw(this VorticeD3D9Sprite sprite, VorticeD3D9Texture texture, VorticeRect? sourceRectangle, Vector3 center, Vector3 position, VorticeColor color)
-    {
-        ArgumentNullException.ThrowIfNull(sprite);
-        ArgumentNullException.ThrowIfNull(texture);
-
-        sprite.Draw(texture, sourceRectangle, center, position, color);
-    }
-
+    // Extension for drawing with System.Drawing.Color
     public static void Draw(this VorticeD3D9Sprite sprite, VorticeD3D9Texture texture, Rectangle? sourceRectangle, Vector3 center, Vector3 position, Color color)
     {
         ArgumentNullException.ThrowIfNull(sprite);
@@ -173,26 +166,20 @@ public static class VorticeD3D9Extensions
         VorticeRect? rect = sourceRectangle.HasValue ? new VorticeRect(sourceRectangle.Value.Left, sourceRectangle.Value.Top, sourceRectangle.Value.Right, sourceRectangle.Value.Bottom) : null;
         VorticeColor vorticeColor = new VorticeColor(color.R, color.G, color.B, color.A);
         
-        sprite.Draw(texture, rect, center, position, vorticeColor);
+        Vortice.Direct3D9.D3DX9.Draw(sprite, texture, rect, center, position, vorticeColor);
     }
 
-    public static void Draw(this VorticeD3D9Line line, Vector2[] vertexList, VorticeColor color)
-    {
-        ArgumentNullException.ThrowIfNull(line);
-        ArgumentNullException.ThrowIfNull(vertexList);
-
-        line.Draw(vertexList, color);
-    }
-
+    // Extension for line drawing with System.Drawing.Color
     public static void Draw(this VorticeD3D9Line line, Vector2[] vertexList, Color color)
     {
         ArgumentNullException.ThrowIfNull(line);
         ArgumentNullException.ThrowIfNull(vertexList);
 
         VorticeColor vorticeColor = new VorticeColor(color.R, color.G, color.B, color.A);
-        line.Draw(vertexList, vorticeColor);
+        Vortice.Direct3D9.D3DX9.Draw(line, vertexList, vorticeColor);
     }
 
+    // Extension for clearing with System.Drawing.Color
     public static void Clear(this VorticeD3D9Device device, VorticeClearFlags flags, Color color, float z, int stencil)
     {
         ArgumentNullException.ThrowIfNull(device);

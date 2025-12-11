@@ -29,7 +29,7 @@ namespace Client.Rendering.SharpDXD3D9
         {
             public Vector2 Position;
             public Vector2 TexCoord;
-            public int Color;
+            public int Color;  // ARGB format: (A << 24) | (R << 16) | (G << 8) | B
         }
 
         public bool SupportsOutlineShader => _outlinePixelShader != null && _vertexShader != null;
@@ -171,7 +171,7 @@ namespace Client.Rendering.SharpDXD3D9
                 v2 += vPad;
             }
 
-            int vertexColor = (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
+            int vertexColor = PackColorARGB(color);
 
             var viewport = _device.Viewport;
 
@@ -236,7 +236,7 @@ namespace Client.Rendering.SharpDXD3D9
                 v2 = source.Value.Bottom / (float)desc.Height;
             }
 
-            int vertexColor = (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
+            int vertexColor = PackColorARGB(color);
 
             var viewport = _device.Viewport;
 
@@ -322,7 +322,7 @@ namespace Client.Rendering.SharpDXD3D9
                 v2 += vPad;
             }
 
-            int vertexColor = (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
+            int vertexColor = PackColorARGB(color);
 
             var viewport = _device.Viewport;
 
@@ -443,6 +443,12 @@ namespace Client.Rendering.SharpDXD3D9
                 shadowData[3] = 0f;
                 _device.SetPixelShaderConstantF(5, new IntPtr(shadowData), 1);
             }
+        }
+
+        // Helper method to pack System.Drawing.Color to ARGB integer format for D3D9
+        private static int PackColorARGB(System.Drawing.Color color)
+        {
+            return (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
         }
 
         public void Dispose()
