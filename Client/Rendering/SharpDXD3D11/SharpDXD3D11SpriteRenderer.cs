@@ -1,17 +1,14 @@
-using SharpDX;
-using SharpDX.D3DCompiler;
-using SharpDX.Direct3D;
-using SharpDX.Direct3D11;
-using SharpDX.DXGI;
-using SharpDX.Mathematics.Interop;
+using Vortice;
+using Vortice.D3DCompiler;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
+using Vortice.Mathematics;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using Buffer = SharpDX.Direct3D11.Buffer;
 using Color = System.Drawing.Color;
-using Device = SharpDX.Direct3D11.Device;
-using MapFlags = SharpDX.Direct3D11.MapFlags;
 using Matrix3x2 = System.Numerics.Matrix3x2;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 using RectangleF = System.Drawing.RectangleF;
@@ -21,22 +18,22 @@ namespace Client.Rendering.SharpDXD3D11
 {
     public sealed class SharpDXD3D11SpriteRenderer : IDisposable
     {
-        private readonly Device _device;
-        private readonly DeviceContext _context;
-        private VertexShader _vertexShader;
-        private PixelShader _pixelShader;
-        private PixelShader _grayscalePixelShader;
-        private PixelShader _outlinePixelShader;
-        private PixelShader _dropShadowPixelShader;
-        private InputLayout _inputLayout;
-        private Buffer _vertexBuffer;
-        private Buffer _matrixBuffer;
-        private Buffer _outlineBuffer;
-        private Buffer _dropShadowBuffer;
-        private SamplerState _samplerState;
+        private readonly ID3D11Device _device;
+        private readonly ID3D11DeviceContext _context;
+        private ID3D11VertexShader _vertexShader;
+        private ID3D11PixelShader _pixelShader;
+        private ID3D11PixelShader _grayscalePixelShader;
+        private ID3D11PixelShader _outlinePixelShader;
+        private ID3D11PixelShader _dropShadowPixelShader;
+        private ID3D11InputLayout _inputLayout;
+        private ID3D11Buffer _vertexBuffer;
+        private ID3D11Buffer _matrixBuffer;
+        private ID3D11Buffer _outlineBuffer;
+        private ID3D11Buffer _dropShadowBuffer;
+        private ID3D11SamplerState _samplerState;
 
-        private readonly Dictionary<BlendMode, BlendState> _blendStates = new Dictionary<BlendMode, BlendState>();
-        private readonly Dictionary<Texture2D, ShaderResourceView> _srvCache = new Dictionary<Texture2D, ShaderResourceView>();
+        private readonly Dictionary<BlendMode, ID3D11BlendState> _blendStates = new Dictionary<BlendMode, ID3D11BlendState>();
+        private readonly Dictionary<ID3D11Texture2D, ID3D11ShaderResourceView> _srvCache = new Dictionary<ID3D11Texture2D, ID3D11ShaderResourceView>();
 
         private const string ShaderFileName = "SpriteD3D11.hlsl";
         private const string OutlineShaderFileName = "OutlineD3D11.hlsl";
@@ -48,9 +45,9 @@ namespace Client.Rendering.SharpDXD3D11
         {
             public Vector2 position;
             public Vector2 texture;
-            public RawColor4 color;
+            public Color4 color;
 
-            public VertexType(Vector2 pos, Vector2 tex, RawColor4 col)
+            public VertexType(Vector2 pos, Vector2 tex, Color4 col)
             {
                 position = pos;
                 texture = tex;
@@ -60,16 +57,16 @@ namespace Client.Rendering.SharpDXD3D11
 
         private readonly struct SpriteEffect
         {
-            public PixelShader Shader { get; }
-            public Buffer? ConstantBuffer { get; }
+            public ID3D11PixelShader Shader { get; }
+            public ID3D11Buffer? ConstantBuffer { get; }
             public int ConstantBufferSizeInBytes { get; }
             public float GeometryExpand { get; }
             public bool ExpandUvs { get; }
-            public Action<DataStream>? WriteConstants { get; }
+            public Action<IntPtr>? WriteConstants { get; }
 
             public bool IsValid => Shader != null;
 
-            public SpriteEffect(PixelShader shader, Buffer? constantBuffer, int constantBufferSizeInBytes, float geometryExpand, bool expandUvs, Action<DataStream>? writeConstants)
+            public SpriteEffect(ID3D11PixelShader shader, ID3D11Buffer? constantBuffer, int constantBufferSizeInBytes, float geometryExpand, bool expandUvs, Action<IntPtr>? writeConstants)
             {
                 Shader = shader;
                 ConstantBuffer = constantBuffer;
@@ -83,11 +80,11 @@ namespace Client.Rendering.SharpDXD3D11
         [StructLayout(LayoutKind.Sequential)]
         private struct OutlineBufferType
         {
-            public RawColor4 OutlineColor;
+            public Color4 OutlineColor;
             public Vector2 TextureSize;
             public float OutlineThickness;
             public float Padding;
-            public Vector4 SourceUV;
+            public System.Numerics.Vector4 SourceUV;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -100,7 +97,7 @@ namespace Client.Rendering.SharpDXD3D11
             public Vector2 Padding;
         }
 
-        public SharpDXD3D11SpriteRenderer(Device device)
+        public SharpDXD3D11SpriteRenderer(ID3D11Device device)
         {
             _device = device ?? throw new ArgumentNullException(nameof(device));
             _context = _device.ImmediateContext;
@@ -127,21 +124,25 @@ namespace Client.Rendering.SharpDXD3D11
                 return;
 
             // Compile Vertex Shader
-            using (var vertexShaderByteCode = ShaderBytecode.CompileFromFile(shaderPath, "VS", "vs_5_0"))
+            Compiler.CompileFromFile(shaderPath, "VS", "vs_5_0", out Blob vertexShaderByteCode, out Blob errorBlob);
+            if (vertexShaderByteCode != null)
             {
-                _vertexShader = new VertexShader(_device, vertexShaderByteCode);
-                _inputLayout = new InputLayout(_device, vertexShaderByteCode, new[]
+                _vertexShader = _device.CreateVertexShader(vertexShaderByteCode.AsBytes());
+                _inputLayout = _device.CreateInputLayout(new[]
                 {
-                    new InputElement("POSITION", 0, Format.R32G32_Float, 0, 0),
-                    new InputElement("TEXCOORD", 0, Format.R32G32_Float, 8, 0),
-                    new InputElement("COLOR", 0, Format.R32G32B32A32_Float, 16, 0)
-                });
+                    new InputElementDescription("POSITION", 0, Format.R32G32_Float, 0, 0),
+                    new InputElementDescription("TEXCOORD", 0, Format.R32G32_Float, 8, 0),
+                    new InputElementDescription("COLOR", 0, Format.R32G32B32A32_Float, 16, 0)
+                }, vertexShaderByteCode.AsBytes());
+                vertexShaderByteCode.Dispose();
             }
 
             // Compile Pixel Shader
-            using (var pixelShaderByteCode = ShaderBytecode.CompileFromFile(shaderPath, "PS", "ps_5_0"))
+            Compiler.CompileFromFile(shaderPath, "PS", "ps_5_0", out Blob pixelShaderByteCode, out errorBlob);
+            if (pixelShaderByteCode != null)
             {
-                _pixelShader = new PixelShader(_device, pixelShaderByteCode);
+                _pixelShader = _device.CreatePixelShader(pixelShaderByteCode.AsBytes());
+                pixelShaderByteCode.Dispose();
             }
         }
 
@@ -153,9 +154,11 @@ namespace Client.Rendering.SharpDXD3D11
                 return;
 
             // Compile Grayscale Pixel Shader
-            using (var grayscaleShaderByteCode = ShaderBytecode.CompileFromFile(shaderPath, "PS_GRAY", "ps_5_0"))
+            Compiler.CompileFromFile(shaderPath, "PS_GRAY", "ps_5_0", out Blob grayscaleShaderByteCode, out Blob errorBlob);
+            if (grayscaleShaderByteCode != null)
             {
-                _grayscalePixelShader = new PixelShader(_device, grayscaleShaderByteCode);
+                _grayscalePixelShader = _device.CreatePixelShader(grayscaleShaderByteCode.AsBytes());
+                grayscaleShaderByteCode.Dispose();
             }
         }
 
@@ -166,18 +169,20 @@ namespace Client.Rendering.SharpDXD3D11
             if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
                 return;
 
-            using (var pixelShaderByteCode = ShaderBytecode.CompileFromFile(shaderPath, "PS_OUTLINE", "ps_5_0"))
+            Compiler.CompileFromFile(shaderPath, "PS_OUTLINE", "ps_5_0", out Blob pixelShaderByteCode, out Blob errorBlob);
+            if (pixelShaderByteCode != null)
             {
-                _outlinePixelShader = new PixelShader(_device, pixelShaderByteCode);
+                _outlinePixelShader = _device.CreatePixelShader(pixelShaderByteCode.AsBytes());
+                pixelShaderByteCode.Dispose();
             }
 
-            _outlineBuffer = new Buffer(_device, new BufferDescription
+            _outlineBuffer = _device.CreateBuffer(new BufferDescription
             {
                 Usage = ResourceUsage.Dynamic,
-                SizeInBytes = Utilities.SizeOf<OutlineBufferType>(),
+                ByteWidth = Marshal.SizeOf<OutlineBufferType>(),
                 BindFlags = BindFlags.ConstantBuffer,
-                CpuAccessFlags = CpuAccessFlags.Write,
-                OptionFlags = ResourceOptionFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Write,
+                MiscFlags = ResourceOptionFlags.None,
                 StructureByteStride = 0
             });
         }
@@ -189,18 +194,20 @@ namespace Client.Rendering.SharpDXD3D11
             if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
                 return;
 
-            using (var pixelShaderByteCode = ShaderBytecode.CompileFromFile(shaderPath, "PS_SHADOW", "ps_5_0"))
+            Compiler.CompileFromFile(shaderPath, "PS_SHADOW", "ps_5_0", out Blob pixelShaderByteCode, out Blob errorBlob);
+            if (pixelShaderByteCode != null)
             {
-                _dropShadowPixelShader = new PixelShader(_device, pixelShaderByteCode);
+                _dropShadowPixelShader = _device.CreatePixelShader(pixelShaderByteCode.AsBytes());
+                pixelShaderByteCode.Dispose();
             }
 
-            _dropShadowBuffer = new Buffer(_device, new BufferDescription
+            _dropShadowBuffer = _device.CreateBuffer(new BufferDescription
             {
                 Usage = ResourceUsage.Dynamic,
-                SizeInBytes = Utilities.SizeOf<DropShadowBufferType>(),
+                ByteWidth = Marshal.SizeOf<DropShadowBufferType>(),
                 BindFlags = BindFlags.ConstantBuffer,
-                CpuAccessFlags = CpuAccessFlags.Write,
-                OptionFlags = ResourceOptionFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Write,
+                MiscFlags = ResourceOptionFlags.None,
                 StructureByteStride = 0
             });
         }
@@ -226,39 +233,39 @@ namespace Client.Rendering.SharpDXD3D11
         private void InitializeBuffers()
         {
             // Dynamic vertex buffer for quads (4 vertices)
-            _vertexBuffer = new Buffer(_device, new BufferDescription
+            _vertexBuffer = _device.CreateBuffer(new BufferDescription
             {
                 Usage = ResourceUsage.Dynamic,
-                SizeInBytes = Utilities.SizeOf<VertexType>() * 4,
+                ByteWidth = Marshal.SizeOf<VertexType>() * 4,
                 BindFlags = BindFlags.VertexBuffer,
-                CpuAccessFlags = CpuAccessFlags.Write,
-                OptionFlags = ResourceOptionFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Write,
+                MiscFlags = ResourceOptionFlags.None,
                 StructureByteStride = 0
             });
 
             // Matrix constant buffer
-            _matrixBuffer = new Buffer(_device, new BufferDescription
+            _matrixBuffer = _device.CreateBuffer(new BufferDescription
             {
                 Usage = ResourceUsage.Dynamic,
-                SizeInBytes = Utilities.SizeOf<Matrix4x4>(), // Must be multiple of 16
+                ByteWidth = Marshal.SizeOf<Matrix4x4>(), // Must be multiple of 16
                 BindFlags = BindFlags.ConstantBuffer,
-                CpuAccessFlags = CpuAccessFlags.Write,
-                OptionFlags = ResourceOptionFlags.None,
+                CPUAccessFlags = CpuAccessFlags.Write,
+                MiscFlags = ResourceOptionFlags.None,
                 StructureByteStride = 0
             });
         }
 
         private void InitializeSampler()
         {
-            _samplerState = new SamplerState(_device, new SamplerStateDescription
+            _samplerState = _device.CreateSamplerState(new SamplerDescription
             {
                 Filter = Filter.MinMagMipLinear,
                 AddressU = TextureAddressMode.Clamp,
                 AddressV = TextureAddressMode.Clamp,
                 AddressW = TextureAddressMode.Clamp,
-                ComparisonFunction = Comparison.Never,
-                MinimumLod = 0,
-                MaximumLod = float.MaxValue
+                ComparisonFunction = ComparisonFunction.Never,
+                MinLOD = 0,
+                MaxLOD = float.MaxValue
             });
         }
 
@@ -314,7 +321,7 @@ namespace Client.Rendering.SharpDXD3D11
 
         private void CreateBlendState(BlendMode mode, BlendOption src, BlendOption dest, BlendOption srcAlpha, BlendOption destAlpha)
         {
-            var desc = new BlendStateDescription();
+            var desc = new BlendDescription();
             desc.RenderTarget[0].IsBlendEnabled = true;
 
             // Color Blending
@@ -324,41 +331,41 @@ namespace Client.Rendering.SharpDXD3D11
 
             // Alpha Blending
             // Use valid Alpha options passed in
-            desc.RenderTarget[0].SourceAlphaBlend = srcAlpha;
-            desc.RenderTarget[0].DestinationAlphaBlend = destAlpha;
+            desc.RenderTarget[0].SourceBlendAlpha = srcAlpha;
+            desc.RenderTarget[0].DestinationBlendAlpha = destAlpha;
             desc.RenderTarget[0].AlphaBlendOperation = BlendOperation.Add;
 
-            desc.RenderTarget[0].RenderTargetWriteMask = ColorWriteMaskFlags.All;
+            desc.RenderTarget[0].RenderTargetWriteMask = ColorWriteEnable.All;
 
-            _blendStates[mode] = new BlendState(_device, desc);
+            _blendStates[mode] = _device.CreateBlendState(desc);
         }
 
         public bool SupportsOutlineShader => _outlinePixelShader != null && _outlineBuffer != null;
 
-        public void Draw(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate)
+        public void Draw(ID3D11Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate)
         {
             DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _pixelShader, null);
         }
 
-        public void DrawOutlined(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, RawColor4 outlineColor, float outlineThickness)
+        public void DrawOutlined(ID3D11Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, Color4 outlineColor, float outlineThickness)
         {
             var outlineEffect = CreateOutlineEffect(texture, source, outlineColor, outlineThickness);
             DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _outlinePixelShader ?? _pixelShader, outlineEffect);
         }
 
-        public void DrawGrayscale(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate)
+        public void DrawGrayscale(ID3D11Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate)
         {
             var grayscaleEffect = CreateGrayscaleEffect();
             DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _grayscalePixelShader ?? _pixelShader, grayscaleEffect);
         }
 
-        public void DrawDropShadow(Texture2D texture, RectangleF destination, RectangleF shadowBounds, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, RawColor4 shadowColor, float shadowWidth, float shadowMaxOpacity)
+        public void DrawDropShadow(ID3D11Texture2D texture, RectangleF destination, RectangleF shadowBounds, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, Color4 shadowColor, float shadowWidth, float shadowMaxOpacity)
         {
             var dropShadowEffect = CreateDropShadowEffect(texture, shadowBounds, shadowWidth, shadowMaxOpacity);
             DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _dropShadowPixelShader ?? _pixelShader, dropShadowEffect);
         }
 
-        private SpriteEffect? CreateOutlineEffect(Texture2D texture, RectangleF? source, RawColor4 outlineColor, float outlineThickness)
+        private SpriteEffect? CreateOutlineEffect(ID3D11Texture2D texture, RectangleF? source, Color4 outlineColor, float outlineThickness)
         {
             if (!SupportsOutlineShader || _outlinePixelShader == null)
                 return null;
@@ -382,16 +389,19 @@ namespace Client.Rendering.SharpDXD3D11
                 TextureSize = new Vector2(texWidth, texHeight),
                 OutlineThickness = outlineThickness,
                 Padding = 0f,
-                SourceUV = new Vector4(u1, v1, u2, v2)
+                SourceUV = new System.Numerics.Vector4(u1, v1, u2, v2)
             };
 
             return new SpriteEffect(
                 _outlinePixelShader,
                 _outlineBuffer,
-                Utilities.SizeOf<OutlineBufferType>(),
+                Marshal.SizeOf<OutlineBufferType>(),
                 outlineThickness,
                 true,
-                stream => stream.Write(outlineBuffer));
+                ptr =>
+                {
+                    Marshal.StructureToPtr(outlineBuffer, ptr, false);
+                });
         }
 
         private SpriteEffect? CreateGrayscaleEffect()
@@ -402,7 +412,7 @@ namespace Client.Rendering.SharpDXD3D11
             return new SpriteEffect(_grayscalePixelShader, null, 0, 0f, false, null);
         }
 
-        private SpriteEffect? CreateDropShadowEffect(Texture2D texture, RectangleF shadowBounds, float shadowWidth, float shadowMaxOpacity)
+        private SpriteEffect? CreateDropShadowEffect(ID3D11Texture2D texture, RectangleF shadowBounds, float shadowWidth, float shadowMaxOpacity)
         {
             if (_dropShadowPixelShader == null || _dropShadowBuffer == null)
                 return null;
@@ -419,87 +429,94 @@ namespace Client.Rendering.SharpDXD3D11
             return new SpriteEffect(
                 _dropShadowPixelShader,
                 _dropShadowBuffer,
-                Utilities.SizeOf<DropShadowBufferType>(),
+                Marshal.SizeOf<DropShadowBufferType>(),
                 shadowWidth,
                 false,
-                stream => stream.Write(shadowBuffer));
+                ptr =>
+                {
+                    Marshal.StructureToPtr(shadowBuffer, ptr, false);
+                });
         }
 
-        private void DrawInternal(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, PixelShader pixelShader, SpriteEffect? effect)
+        private void DrawInternal(ID3D11Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, ID3D11PixelShader pixelShader, SpriteEffect? effect)
         {
             if (texture == null) return;
 
             var activePixelShader = effect?.Shader ?? pixelShader ?? _pixelShader;
             if (activePixelShader == null) return;
 
-            var rtv = _context.OutputMerger.GetRenderTargets(1);
-            if (rtv != null && rtv.Length > 0 && rtv[0] != null)
+            ID3D11RenderTargetView[] rtvs = new ID3D11RenderTargetView[1];
+            ID3D11DepthStencilView dsv;
+            _context.OMGetRenderTargets(1, rtvs, out dsv);
+            
+            if (rtvs[0] != null)
             {
-                using (var res = rtv[0].Resource)
-                using (var tex = res.QueryInterface<Texture2D>())
+                ID3D11Resource res = rtvs[0].Resource;
+                if (res != null)
                 {
-                    var width = tex.Description.Width;
-                    var height = tex.Description.Height;
-                    _context.Rasterizer.SetViewport(new RawViewportF
+                    ID3D11Texture2D tex = res.QueryInterface<ID3D11Texture2D>();
+                    if (tex != null)
                     {
-                        X = 0,
-                        Y = 0,
-                        Width = width,
-                        Height = height,
-                        MinDepth = 0,
-                        MaxDepth = 1
-                    });
+                        var desc = tex.Description;
+                        var width = desc.Width;
+                        var height = desc.Height;
+                        _context.RSSetViewport(0, 0, width, height);
+                        tex.Dispose();
+                    }
+                    res.Dispose();
                 }
-                rtv[0].Dispose();
+                rtvs[0].Dispose();
             }
+            dsv?.Dispose();
 
             if (!_srvCache.TryGetValue(texture, out var srv))
             {
-                srv = new ShaderResourceView(_device, texture);
+                srv = _device.CreateShaderResourceView(texture);
                 _srvCache[texture] = srv;
             }
 
-            _context.InputAssembler.InputLayout = _inputLayout;
-            _context.InputAssembler.PrimitiveTopology = PrimitiveTopology.TriangleStrip;
-            _context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_vertexBuffer, Utilities.SizeOf<VertexType>(), 0));
+            _context.IASetInputLayout(_inputLayout);
+            _context.IASetPrimitiveTopology(PrimitiveTopology.TriangleStrip);
+            _context.IASetVertexBuffers(0, 1, new[] { _vertexBuffer }, new[] { Marshal.SizeOf<VertexType>() }, new[] { 0 });
 
             bool usingEffect = effect.HasValue && effect.Value.IsValid;
             float geometryExpand = usingEffect ? effect.Value.GeometryExpand : 0f;
             bool expandUvs = usingEffect && effect.Value.ExpandUvs;
 
-            UpdateVertexBuffer(destination, source, texture.Description.Width, texture.Description.Height, color, opacity, geometryExpand, expandUvs);
+            Texture2DDescription texDesc = texture.Description;
+            UpdateVertexBuffer(destination, source, texDesc.Width, texDesc.Height, color, opacity, geometryExpand, expandUvs);
             UpdateMatrixBuffer(transform);
 
-            _context.VertexShader.Set(_vertexShader);
-            _context.PixelShader.Set(activePixelShader);
-            _context.PixelShader.SetShaderResource(0, srv);
-            _context.PixelShader.SetSampler(0, _samplerState);
-            _context.VertexShader.SetConstantBuffer(0, _matrixBuffer);
+            _context.VSSetShader(_vertexShader);
+            _context.PSSetShader(activePixelShader);
+            _context.PSSetShaderResources(0, 1, new[] { srv });
+            _context.PSSetSamplers(0, 1, new[] { _samplerState });
+            _context.VSSetConstantBuffers(0, 1, new[] { _matrixBuffer });
 
             ApplyEffect(effect);
 
             if (_blendStates.TryGetValue(blendMode, out var blendState))
             {
-                var factor = new RawColor4(blendRate, blendRate, blendRate, blendRate);
-                _context.OutputMerger.SetBlendState(blendState, factor, -1);
+                var factor = new Color4(blendRate, blendRate, blendRate, blendRate);
+                _context.OMSetBlendState(blendState, factor, -1);
             }
             else
             {
-                var factor = new RawColor4(blendRate, blendRate, blendRate, blendRate);
-                _context.OutputMerger.SetBlendState(_blendStates[BlendMode.NORMAL], factor, -1);
+                var factor = new Color4(blendRate, blendRate, blendRate, blendRate);
+                _context.OMSetBlendState(_blendStates[BlendMode.NORMAL], factor, -1);
             }
 
             _context.Draw(4, 0);
 
-            _context.PixelShader.SetConstantBuffer(1, null);
-            _context.OutputMerger.SetBlendState(null, null, -1);
+            _context.PSSetConstantBuffers(1, 1, new ID3D11Buffer[] { null });
+            _context.OMSetBlendState(null, null, -1);
         }
 
         private void ApplyEffect(SpriteEffect? effect)
         {
             if (!effect.HasValue || !effect.Value.IsValid)
             {
-                _context.PixelShader.SetConstantBuffer(1, null);
+                _context.PSSetConstantBuffers(1, 1, new ID3D11Buffer[] { null });
                 return;
             }
 
@@ -507,18 +524,15 @@ namespace Client.Rendering.SharpDXD3D11
 
             if (spriteEffect.ConstantBuffer != null && spriteEffect.WriteConstants != null)
             {
-                DataBox box = _context.MapSubresource(spriteEffect.ConstantBuffer, 0, MapMode.WriteDiscard, MapFlags.None);
-                using (var stream = new DataStream(box.DataPointer, spriteEffect.ConstantBufferSizeInBytes, true, true))
-                {
-                    spriteEffect.WriteConstants(stream);
-                }
-                _context.UnmapSubresource(spriteEffect.ConstantBuffer, 0);
+                MappedSubresource mapped = _context.Map(spriteEffect.ConstantBuffer, 0, MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
+                spriteEffect.WriteConstants(mapped.DataPointer);
+                _context.Unmap(spriteEffect.ConstantBuffer, 0);
 
-                _context.PixelShader.SetConstantBuffer(1, spriteEffect.ConstantBuffer);
+                _context.PSSetConstantBuffers(1, 1, new[] { spriteEffect.ConstantBuffer });
             }
             else
             {
-                _context.PixelShader.SetConstantBuffer(1, null);
+                _context.PSSetConstantBuffers(1, 1, new ID3D11Buffer[] { null });
             }
         }
 
@@ -556,7 +570,7 @@ namespace Client.Rendering.SharpDXD3D11
                 }
             }
 
-            var col = new RawColor4(color.R / 255f, color.G / 255f, color.B / 255f, (color.A / 255f) * opacity);
+            var col = new Color4(color.R / 255f, color.G / 255f, color.B / 255f, (color.A / 255f) * opacity);
 
             // Triangle Strip: TopLeft, TopRight, BottomLeft, BottomRight
             var v0 = new VertexType(new Vector2(left, top), new Vector2(u1, v1), col);
@@ -564,23 +578,26 @@ namespace Client.Rendering.SharpDXD3D11
             var v2_ = new VertexType(new Vector2(left, bottom), new Vector2(u1, v2), col);
             var v3 = new VertexType(new Vector2(right, bottom), new Vector2(u2, v2), col);
 
-            DataBox box = _context.MapSubresource(_vertexBuffer, 0, MapMode.WriteDiscard, MapFlags.None);
-            using (var stream = new DataStream(box.DataPointer, Utilities.SizeOf<VertexType>() * 4, true, true))
+            MappedSubresource mapped = _context.Map(_vertexBuffer, 0, MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
+            unsafe
             {
-                stream.Write(v0);
-                stream.Write(v1_);
-                stream.Write(v2_);
-                stream.Write(v3);
+                VertexType* vertices = (VertexType*)mapped.DataPointer;
+                vertices[0] = v0;
+                vertices[1] = v1_;
+                vertices[2] = v2_;
+                vertices[3] = v3;
             }
-            _context.UnmapSubresource(_vertexBuffer, 0);
+            _context.Unmap(_vertexBuffer, 0);
         }
 
         private void UpdateMatrixBuffer(Matrix3x2 transform)
         {
             // Create Orthographic Projection Matrix based on BackBuffer size
-            var viewport = _context.Rasterizer.GetViewports<RawViewportF>()[0];
-            float width = viewport.Width;
-            float height = viewport.Height;
+            Viewport[] viewports = new Viewport[1];
+            int numViewports = 1;
+            _context.RSGetViewports(ref numViewports, viewports);
+            float width = viewports[0].Width;
+            float height = viewports[0].Height;
 
             // Standard 2D Ortho: Top-Left (0,0) to Bottom-Right (w,h)
             // Map 0..W to -1..1, 0..H to 1..-1
@@ -621,12 +638,13 @@ namespace Client.Rendering.SharpDXD3D11
             // SharpDX Matrix.Transpose() is usually needed if the shader uses `matrix` type and `mul(pos, mat)`.
             final = Matrix4x4.Transpose(final);
 
-            DataBox box = _context.MapSubresource(_matrixBuffer, 0, MapMode.WriteDiscard, MapFlags.None);
-            using (var stream = new DataStream(box.DataPointer, Utilities.SizeOf<Matrix4x4>(), true, true))
+            MappedSubresource mapped = _context.Map(_matrixBuffer, 0, MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
+            unsafe
             {
-                stream.Write(final);
+                Matrix4x4* matrix = (Matrix4x4*)mapped.DataPointer;
+                *matrix = final;
             }
-            _context.UnmapSubresource(_matrixBuffer, 0);
+            _context.Unmap(_matrixBuffer, 0);
         }
 
         public void Dispose()
