@@ -46,6 +46,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
+    <PackageReference Include="Vortice.Direct3D9" Version="3.8.1" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="3.8.1" />
     <PackageReference Include="Vortice.Direct2D1" Version="3.8.1" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.1" />
     <PackageReference Include="Vortice.DXGI" Version="3.8.1" />
