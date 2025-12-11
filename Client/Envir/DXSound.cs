@@ -1,10 +1,10 @@
 ﻿using Client.Rendering;
-using SharpDX.DirectSound;
+using Vortice.DirectSound;
+using Vortice.Multimedia;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using NAudioWave = NAudio.Wave;
-using SharpDXMultimedia = SharpDX.Multimedia;
 
 namespace Client.Envir
 {
@@ -12,9 +12,9 @@ namespace Client.Envir
     {
         public string FileName { get; set; }
 
-        public List<SecondarySoundBuffer> BufferList = new List<SecondarySoundBuffer>();
+        public List<IDirectSoundBuffer> BufferList = new List<IDirectSoundBuffer>();
 
-        private SharpDXMultimedia.WaveFormat Format;
+        private WaveFormat Format;
         private byte[] RawData;
 
 
@@ -81,12 +81,6 @@ namespace Client.Envir
 
             for (int i = BufferList.Count - 1; i >= 0; i--)
             {
-                if (BufferList[i].IsDisposed)
-                {
-                    BufferList.RemoveAt(i);
-                    continue;
-                }
-
                 if (IsBufferPlaying(BufferList[i]))
                 {
                     continue;
@@ -101,7 +95,7 @@ namespace Client.Envir
                 return;
             }
 
-            SecondarySoundBuffer buff = CreateBuffer();
+            IDirectSoundBuffer buff = CreateBuffer();
             buff.Play(0, PlayFlags.None);
         }
         public void Stop()
@@ -118,19 +112,14 @@ namespace Client.Envir
 
             for (int i = BufferList.Count - 1; i >= 0; i--)
             {
-                if (BufferList[i].IsDisposed)
-                {
-                    BufferList.RemoveAt(i);
-                    continue;
-                }
                 BufferList[i].CurrentPosition = 0;
                 BufferList[i].Stop();
             }
         }
 
-        private SecondarySoundBuffer CreateBuffer()
+        private IDirectSoundBuffer CreateBuffer()
         {
-            SecondarySoundBuffer buff;
+            IDirectSoundBuffer buff;
             BufferFlags flags = BufferFlags.ControlVolume;
 
             if (Config.SoundInBackground)
@@ -145,12 +134,13 @@ namespace Client.Envir
                 Flags = flags
             };
 
-            BufferList.Add(buff = new SecondarySoundBuffer(DXSoundManager.Device, description)
-            {
-                Volume = Volume
-            });
+            buff = DXSoundManager.Device.CreateSoundBuffer(description);
+            buff.Volume = Volume;
+            BufferList.Add(buff);
 
-            buff.Write(RawData, 0, LockFlags.EntireBuffer);
+            DataStream stream = buff.Lock(0, RawData.Length, LockFlags.EntireBuffer);
+            stream.WriteRange(RawData);
+            buff.Unlock(stream);
 
             return buff;
         }
@@ -160,11 +150,7 @@ namespace Client.Envir
 
             for (int i = BufferList.Count - 1; i >= 0; i--)
             {
-                if (!BufferList[i].IsDisposed)
-                {
-                    BufferList[i].Dispose();
-                }
-
+                BufferList[i]?.Dispose();
                 BufferList.RemoveAt(i);
             }
 
@@ -178,12 +164,6 @@ namespace Client.Envir
 
             for (int i = BufferList.Count - 1; i >= 0; i--)
             {
-                if (BufferList[i].IsDisposed)
-                {
-                    BufferList.RemoveAt(i);
-                    continue;
-                }
-
                 BufferList[i].Volume = Volume;
             }
         }
@@ -192,7 +172,7 @@ namespace Client.Envir
         {
             for (int i = BufferList.Count - 1; i >= 0; i--)
             {
-                SecondarySoundBuffer buffer = CreateBuffer();
+                IDirectSoundBuffer buffer = CreateBuffer();
 
                 buffer.CurrentPosition = GetCurrentPlayPosition(BufferList[0]);
 
@@ -201,33 +181,29 @@ namespace Client.Envir
                     buffer.Play(0, Loop ? PlayFlags.Looping : PlayFlags.None);
                 }
 
-                if (!BufferList[0].IsDisposed)
-                {
-                    BufferList[0].Dispose();
-                }
-
+                BufferList[0]?.Dispose();
                 BufferList.RemoveAt(0);
             }
 
         }
 
-        private static bool IsBufferPlaying(SecondarySoundBuffer buffer)
+        private static bool IsBufferPlaying(IDirectSoundBuffer buffer)
         {
-            return ((BufferStatus)buffer.Status).HasFlag(BufferStatus.Playing);
+            return buffer.Status.HasFlag(BufferStatus.Playing);
         }
 
-        private static int GetCurrentPlayPosition(SecondarySoundBuffer buffer)
+        private static int GetCurrentPlayPosition(IDirectSoundBuffer buffer)
         {
             buffer.GetCurrentPosition(out int playCursor, out _);
             return playCursor;
         }
 
-        private static SharpDXMultimedia.WaveFormat ConvertWaveFormat(global::NAudio.Wave.WaveFormat sourceFormat)
+        private static WaveFormat ConvertWaveFormat(global::NAudio.Wave.WaveFormat sourceFormat)
         {
-            if (!Enum.TryParse(sourceFormat.Encoding.ToString(), out SharpDXMultimedia.WaveFormatEncoding encoding))
-                encoding = SharpDXMultimedia.WaveFormatEncoding.Pcm;
+            if (!Enum.TryParse(sourceFormat.Encoding.ToString(), out WaveFormatTag encoding))
+                encoding = WaveFormatTag.Pcm;
 
-            return SharpDXMultimedia.WaveFormat.CreateCustomFormat(
+            return WaveFormat.CreateCustomFormat(
                 encoding,
                 sourceFormat.SampleRate,
                 sourceFormat.Channels,

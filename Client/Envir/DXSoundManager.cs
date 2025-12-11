@@ -1,6 +1,6 @@
 ﻿using Client.Rendering;
 using Library;
-using SharpDX.DirectSound;
+using Vortice.DirectSound;
 using System;
 using System.Collections.Generic;
 
@@ -11,7 +11,7 @@ namespace Client.Envir
     {
         private const string SoundPath = @".\Sound\";
 
-        public static DirectSound Device;
+        public static IDirectSound Device;
         public static bool Error;
 
         #region SoundList
@@ -1039,7 +1039,7 @@ namespace Client.Envir
         {
             try
             {
-                Device = new DirectSound();
+                Device = DSound.DirectSoundCreate();
                 Device.SetCooperativeLevel(CEnvir.Target.Handle, CooperativeLevel.Normal);
                 AdjustVolume();
             }
@@ -1137,11 +1137,7 @@ namespace Client.Envir
 
             if (Device != null)
             {
-                if (!Device.IsDisposed)
-                {
-                    Device.Dispose();
-                }
-
+                Device?.Dispose();
                 Device = null;
             }
         }
