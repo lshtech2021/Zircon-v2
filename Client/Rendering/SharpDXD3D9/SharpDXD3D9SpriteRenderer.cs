@@ -1,29 +1,24 @@
-using SharpDX;
-using SharpDX.Direct3D9;
-using SharpDX.Mathematics.Interop;
+using Vortice.Direct3D9;
+using Vortice.D3DCompiler;
+using Vortice.Mathematics;
 using System;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
-using D3D9ShaderBytecode = SharpDX.Direct3D9.ShaderBytecode;
-using D3DCompilerBytecode = SharpDX.D3DCompiler.ShaderBytecode;
-using D3DCompilerShaderFlags = SharpDX.D3DCompiler.ShaderFlags;
-using DxVector2 = SharpDX.Vector2;
-using EffectFlags = SharpDX.D3DCompiler.EffectFlags;
-using NumericsMatrix3x2 = System.Numerics.Matrix3x2;
 
 namespace Client.Rendering.SharpDXD3D9
 {
     public sealed class SharpDXD3D9SpriteRenderer : IDisposable
     {
-        private readonly Device _device;
+        private readonly IDirect3DDevice9 _device;
 
-        private VertexShader _vertexShader;
-        private VertexShader _shadowVertexShader;
-        private PixelShader _outlinePixelShader;
-        private PixelShader _grayscalePixelShader;
-        private PixelShader _dropShadowPixelShader;
-        private VertexBuffer _vertexBuffer;
-        private VertexDeclaration _vertexDeclaration;
+        private IDirect3DVertexShader9 _vertexShader;
+        private IDirect3DVertexShader9 _shadowVertexShader;
+        private IDirect3DPixelShader9 _outlinePixelShader;
+        private IDirect3DPixelShader9 _grayscalePixelShader;
+        private IDirect3DPixelShader9 _dropShadowPixelShader;
+        private IDirect3DVertexBuffer9 _vertexBuffer;
+        private IDirect3DVertexDeclaration9 _vertexDeclaration;
 
         private const string OutlineShaderFileName = "OutlineD3D9.hlsl";
         private const string GrayscaleShaderFileName = "GrayscaleD3D9.hlsl";
@@ -32,16 +27,16 @@ namespace Client.Rendering.SharpDXD3D9
         [StructLayout(LayoutKind.Sequential)]
         private struct VertexType
         {
-            public DxVector2 Position;
-            public DxVector2 TexCoord;
-            public RawColorBGRA Color;
+            public Vector2 Position;
+            public Vector2 TexCoord;
+            public int Color;
         }
 
         public bool SupportsOutlineShader => _outlinePixelShader != null && _vertexShader != null;
         public bool SupportsGrayscaleShader => _grayscalePixelShader != null && _vertexShader != null;
         public bool SupportsDropShadowShader => _dropShadowPixelShader != null && _shadowVertexShader != null;
 
-        public SharpDXD3D9SpriteRenderer(Device device)
+        public SharpDXD3D9SpriteRenderer(IDirect3DDevice9 device)
         {
             _device = device ?? throw new ArgumentNullException(nameof(device));
 
@@ -63,14 +58,14 @@ namespace Client.Rendering.SharpDXD3D9
             if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
                 return;
 
-            using (var compiledVertex = D3DCompilerBytecode.CompileFromFile(shaderPath, "VS", "vs_3_0", D3DCompilerShaderFlags.OptimizationLevel3, EffectFlags.None))
-            using (var compiledPixel = D3DCompilerBytecode.CompileFromFile(shaderPath, "PS_OUTLINE", "ps_3_0", D3DCompilerShaderFlags.OptimizationLevel3, EffectFlags.None))
-            using (var vertexByteCode = new D3D9ShaderBytecode(compiledVertex))
-            using (var pixelByteCode = new D3D9ShaderBytecode(compiledPixel))
-            {
-                _vertexShader = new VertexShader(_device, vertexByteCode);
-                _outlinePixelShader = new PixelShader(_device, pixelByteCode);
-            }
+            var compiledVertex = Compiler.CompileFromFile(shaderPath, "VS", "vs_3_0", ShaderFlags.OptimizationLevel3);
+            var compiledPixel = Compiler.CompileFromFile(shaderPath, "PS_OUTLINE", "ps_3_0", ShaderFlags.OptimizationLevel3);
+            
+            _vertexShader = _device.CreateVertexShader(compiledVertex.AsBytes());
+            _outlinePixelShader = _device.CreatePixelShader(compiledPixel.AsBytes());
+            
+            compiledVertex.Dispose();
+            compiledPixel.Dispose();
         }
 
         private void InitializeGrayscaleShader()
@@ -80,11 +75,11 @@ namespace Client.Rendering.SharpDXD3D9
             if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
                 return;
 
-            using (var compiledPixel = D3DCompilerBytecode.CompileFromFile(shaderPath, "PS_GRAY", "ps_3_0", D3DCompilerShaderFlags.OptimizationLevel3, EffectFlags.None))
-            using (var pixelByteCode = new D3D9ShaderBytecode(compiledPixel))
-            {
-                _grayscalePixelShader = new PixelShader(_device, pixelByteCode);
-            }
+            var compiledPixel = Compiler.CompileFromFile(shaderPath, "PS_GRAY", "ps_3_0", ShaderFlags.OptimizationLevel3);
+            
+            _grayscalePixelShader = _device.CreatePixelShader(compiledPixel.AsBytes());
+            
+            compiledPixel.Dispose();
         }
 
         private void InitializeDropShadowShader()
@@ -94,14 +89,14 @@ namespace Client.Rendering.SharpDXD3D9
             if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
                 return;
 
-            using (var compiledVertex = D3DCompilerBytecode.CompileFromFile(shaderPath, "VS", "vs_3_0", D3DCompilerShaderFlags.OptimizationLevel3, EffectFlags.None))
-            using (var compiledPixel = D3DCompilerBytecode.CompileFromFile(shaderPath, "PS_SHADOW", "ps_3_0", D3DCompilerShaderFlags.OptimizationLevel3, EffectFlags.None))
-            using (var vertexByteCode = new D3D9ShaderBytecode(compiledVertex))
-            using (var pixelByteCode = new D3D9ShaderBytecode(compiledPixel))
-            {
-                _shadowVertexShader = new VertexShader(_device, vertexByteCode);
-                _dropShadowPixelShader = new PixelShader(_device, pixelByteCode);
-            }
+            var compiledVertex = Compiler.CompileFromFile(shaderPath, "VS", "vs_3_0", ShaderFlags.OptimizationLevel3);
+            var compiledPixel = Compiler.CompileFromFile(shaderPath, "PS_SHADOW", "ps_3_0", ShaderFlags.OptimizationLevel3);
+            
+            _shadowVertexShader = _device.CreateVertexShader(compiledVertex.AsBytes());
+            _dropShadowPixelShader = _device.CreatePixelShader(compiledPixel.AsBytes());
+            
+            compiledVertex.Dispose();
+            compiledPixel.Dispose();
         }
 
         private static string FindShaderPath(string filename)
@@ -124,9 +119,9 @@ namespace Client.Rendering.SharpDXD3D9
 
         private void InitializeBuffers()
         {
-            _vertexBuffer = new VertexBuffer(_device, Marshal.SizeOf<VertexType>() * 4, Usage.WriteOnly | Usage.Dynamic, VertexFormat.None, Pool.Default);
+            _vertexBuffer = _device.CreateVertexBuffer(Marshal.SizeOf<VertexType>() * 4, Usage.WriteOnly | Usage.Dynamic, VertexFormat.None, Pool.Default);
 
-            _vertexDeclaration = new VertexDeclaration(_device, new[]
+            _vertexDeclaration = _device.CreateVertexDeclaration(new[]
             {
                 new VertexElement(0, 0, DeclarationType.Float2, DeclarationMethod.Default, DeclarationUsage.Position, 0),
                 new VertexElement(0, 8, DeclarationType.Float2, DeclarationMethod.Default, DeclarationUsage.TextureCoordinate, 0),
@@ -135,14 +130,14 @@ namespace Client.Rendering.SharpDXD3D9
             });
         }
 
-        public void DrawOutlined(Texture texture, System.Drawing.RectangleF destination, System.Drawing.Rectangle? source, System.Drawing.Color color, NumericsMatrix3x2 transform, Color4 outlineColor, float outlineThickness)
+        public void DrawOutlined(IDirect3DTexture9 texture, System.Drawing.RectangleF destination, System.Drawing.Rectangle? source, System.Drawing.Color color, Matrix3x2 transform, Color4 outlineColor, float outlineThickness)
         {
-            if (!SupportsOutlineShader || texture == null || texture.IsDisposed)
+            if (!SupportsOutlineShader || texture == null || texture.Disposed)
                 return;
 
             float effectiveThickness = outlineThickness > 0 ? 1.0f : 0.0f;
 
-            using var stateBlock = new StateBlock(_device, StateBlockType.All);
+            var stateBlock = _device.CreateStateBlock(StateBlockType.All);
             stateBlock.Capture();
 
             var desc = texture.GetLevelDescription(0);
@@ -176,31 +171,35 @@ namespace Client.Rendering.SharpDXD3D9
                 v2 += vPad;
             }
 
-            var vertexColor = new RawColorBGRA(color.R, color.G, color.B, color.A);
+            int vertexColor = (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
 
             var viewport = _device.Viewport;
 
             UpdateMatrix(transform, viewport.Width, viewport.Height);
             UpdateOutlineConstants(desc.Width, desc.Height, outlineColor, effectiveThickness, u1, v1, u2, v2);
 
-            DataStream stream = _vertexBuffer.Lock(0, 0, LockFlags.Discard);
-            stream.Write(new VertexType { Position = new DxVector2(left, top), TexCoord = new DxVector2(u1, v1), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(right, top), TexCoord = new DxVector2(u2, v1), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(left, bottom), TexCoord = new DxVector2(u1, v2), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(right, bottom), TexCoord = new DxVector2(u2, v2), Color = vertexColor });
+            IntPtr dataPtr = _vertexBuffer.Lock(0, 0, LockFlags.Discard);
+            unsafe
+            {
+                VertexType* vertices = (VertexType*)dataPtr;
+                vertices[0] = new VertexType { Position = new Vector2(left, top), TexCoord = new Vector2(u1, v1), Color = vertexColor };
+                vertices[1] = new VertexType { Position = new Vector2(right, top), TexCoord = new Vector2(u2, v1), Color = vertexColor };
+                vertices[2] = new VertexType { Position = new Vector2(left, bottom), TexCoord = new Vector2(u1, v2), Color = vertexColor };
+                vertices[3] = new VertexType { Position = new Vector2(right, bottom), TexCoord = new Vector2(u2, v2), Color = vertexColor };
+            }
             _vertexBuffer.Unlock();
 
             _device.SetRenderState(RenderState.AlphaBlendEnable, true);
-            _device.SetRenderState(RenderState.SourceBlend, SharpDX.Direct3D9.Blend.SourceAlpha);
-            _device.SetRenderState(RenderState.DestinationBlend, SharpDX.Direct3D9.Blend.InverseSourceAlpha);
-            _device.SetRenderState(RenderState.CullMode, Cull.None);
+            _device.SetRenderState(RenderState.SourceBlend, (int)Vortice.Direct3D9.Blend.SourceAlpha);
+            _device.SetRenderState(RenderState.DestinationBlend, (int)Vortice.Direct3D9.Blend.InverseSourceAlpha);
+            _device.SetRenderState(RenderState.CullMode, (int)Cull.None);
 
             _device.SetTexture(0, texture);
-            _device.SetSamplerState(0, SamplerState.AddressU, TextureAddress.Clamp);
-            _device.SetSamplerState(0, SamplerState.AddressV, TextureAddress.Clamp);
-            _device.SetSamplerState(0, SamplerState.MinFilter, TextureFilter.Point);
-            _device.SetSamplerState(0, SamplerState.MagFilter, TextureFilter.Point);
-            _device.SetSamplerState(0, SamplerState.MipFilter, TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.AddressU, (int)TextureAddress.Clamp);
+            _device.SetSamplerState(0, SamplerState.AddressV, (int)TextureAddress.Clamp);
+            _device.SetSamplerState(0, SamplerState.MinFilter, (int)TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.MagFilter, (int)TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.MipFilter, (int)TextureFilter.Point);
 
             _device.VertexDeclaration = _vertexDeclaration;
             _device.SetStreamSource(0, _vertexBuffer, 0, Marshal.SizeOf<VertexType>());
@@ -210,14 +209,15 @@ namespace Client.Rendering.SharpDXD3D9
             _device.DrawPrimitives(PrimitiveType.TriangleStrip, 0, 2);
 
             stateBlock.Apply();
+            stateBlock.Dispose();
         }
 
-        public void DrawGrayscale(Texture texture, System.Drawing.RectangleF destination, System.Drawing.Rectangle? source, System.Drawing.Color color, NumericsMatrix3x2 transform)
+        public void DrawGrayscale(IDirect3DTexture9 texture, System.Drawing.RectangleF destination, System.Drawing.Rectangle? source, System.Drawing.Color color, Matrix3x2 transform)
         {
-            if (!SupportsGrayscaleShader || texture == null || texture.IsDisposed)
+            if (!SupportsGrayscaleShader || texture == null || texture.Disposed)
                 return;
 
-            using var stateBlock = new StateBlock(_device, StateBlockType.All);
+            var stateBlock = _device.CreateStateBlock(StateBlockType.All);
             stateBlock.Capture();
 
             var desc = texture.GetLevelDescription(0);
@@ -236,30 +236,34 @@ namespace Client.Rendering.SharpDXD3D9
                 v2 = source.Value.Bottom / (float)desc.Height;
             }
 
-            var vertexColor = new RawColorBGRA(color.R, color.G, color.B, color.A);
+            int vertexColor = (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
 
             var viewport = _device.Viewport;
 
             UpdateMatrix(transform, viewport.Width, viewport.Height);
 
-            DataStream stream = _vertexBuffer.Lock(0, 0, LockFlags.Discard);
-            stream.Write(new VertexType { Position = new DxVector2(left, top), TexCoord = new DxVector2(u1, v1), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(right, top), TexCoord = new DxVector2(u2, v1), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(left, bottom), TexCoord = new DxVector2(u1, v2), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(right, bottom), TexCoord = new DxVector2(u2, v2), Color = vertexColor });
+            IntPtr dataPtr = _vertexBuffer.Lock(0, 0, LockFlags.Discard);
+            unsafe
+            {
+                VertexType* vertices = (VertexType*)dataPtr;
+                vertices[0] = new VertexType { Position = new Vector2(left, top), TexCoord = new Vector2(u1, v1), Color = vertexColor };
+                vertices[1] = new VertexType { Position = new Vector2(right, top), TexCoord = new Vector2(u2, v1), Color = vertexColor };
+                vertices[2] = new VertexType { Position = new Vector2(left, bottom), TexCoord = new Vector2(u1, v2), Color = vertexColor };
+                vertices[3] = new VertexType { Position = new Vector2(right, bottom), TexCoord = new Vector2(u2, v2), Color = vertexColor };
+            }
             _vertexBuffer.Unlock();
 
             _device.SetRenderState(RenderState.AlphaBlendEnable, SharpDXD3D9Manager.Blending);
-            _device.SetRenderState(RenderState.SourceBlend, Blend.InverseDestinationColor);
-            _device.SetRenderState(RenderState.DestinationBlend, Blend.One);
-            _device.SetRenderState(RenderState.CullMode, Cull.None);
+            _device.SetRenderState(RenderState.SourceBlend, (int)Vortice.Direct3D9.Blend.InverseDestinationColor);
+            _device.SetRenderState(RenderState.DestinationBlend, (int)Vortice.Direct3D9.Blend.One);
+            _device.SetRenderState(RenderState.CullMode, (int)Cull.None);
 
             _device.SetTexture(0, texture);
-            _device.SetSamplerState(0, SamplerState.AddressU, TextureAddress.Clamp);
-            _device.SetSamplerState(0, SamplerState.AddressV, TextureAddress.Clamp);
-            _device.SetSamplerState(0, SamplerState.MinFilter, TextureFilter.Point);
-            _device.SetSamplerState(0, SamplerState.MagFilter, TextureFilter.Point);
-            _device.SetSamplerState(0, SamplerState.MipFilter, TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.AddressU, (int)TextureAddress.Clamp);
+            _device.SetSamplerState(0, SamplerState.AddressV, (int)TextureAddress.Clamp);
+            _device.SetSamplerState(0, SamplerState.MinFilter, (int)TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.MagFilter, (int)TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.MipFilter, (int)TextureFilter.Point);
 
             _device.VertexDeclaration = _vertexDeclaration;
             _device.SetStreamSource(0, _vertexBuffer, 0, Marshal.SizeOf<VertexType>());
@@ -269,14 +273,15 @@ namespace Client.Rendering.SharpDXD3D9
             _device.DrawPrimitives(PrimitiveType.TriangleStrip, 0, 2);
 
             stateBlock.Apply();
+            stateBlock.Dispose();
         }
 
-        public void DrawDropShadow(Texture texture, System.Drawing.RectangleF destination, System.Drawing.RectangleF shadowBounds, System.Drawing.Rectangle? source, System.Drawing.Color color, NumericsMatrix3x2 transform, SharpDX.Mathematics.Interop.RawColor4 shadowColor, float shadowWidth, float shadowMaxOpacity)
+        public void DrawDropShadow(IDirect3DTexture9 texture, System.Drawing.RectangleF destination, System.Drawing.RectangleF shadowBounds, System.Drawing.Rectangle? source, System.Drawing.Color color, Matrix3x2 transform, Color4 shadowColor, float shadowWidth, float shadowMaxOpacity)
         {
-            if (!SupportsDropShadowShader || texture == null || texture.IsDisposed)
+            if (!SupportsDropShadowShader || texture == null || texture.Disposed)
                 return;
 
-            using var stateBlock = new StateBlock(_device, StateBlockType.All);
+            var stateBlock = _device.CreateStateBlock(StateBlockType.All);
             stateBlock.Capture();
 
             var desc = texture.GetLevelDescription(0);
@@ -317,31 +322,35 @@ namespace Client.Rendering.SharpDXD3D9
                 v2 += vPad;
             }
 
-            var vertexColor = new RawColorBGRA(color.R, color.G, color.B, color.A);
+            int vertexColor = (color.A << 24) | (color.R << 16) | (color.G << 8) | color.B;
 
             var viewport = _device.Viewport;
 
             UpdateMatrix(transform, viewport.Width, viewport.Height);
             UpdateShadowConstants(imageLeft, imageTop, imageRight, imageBottom, effectiveWidth, shadowMaxOpacity);
 
-            DataStream stream = _vertexBuffer.Lock(0, 0, LockFlags.Discard);
-            stream.Write(new VertexType { Position = new DxVector2(left, top), TexCoord = new DxVector2(u1, v1), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(right, top), TexCoord = new DxVector2(u2, v1), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(left, bottom), TexCoord = new DxVector2(u1, v2), Color = vertexColor });
-            stream.Write(new VertexType { Position = new DxVector2(right, bottom), TexCoord = new DxVector2(u2, v2), Color = vertexColor });
+            IntPtr dataPtr = _vertexBuffer.Lock(0, 0, LockFlags.Discard);
+            unsafe
+            {
+                VertexType* vertices = (VertexType*)dataPtr;
+                vertices[0] = new VertexType { Position = new Vector2(left, top), TexCoord = new Vector2(u1, v1), Color = vertexColor };
+                vertices[1] = new VertexType { Position = new Vector2(right, top), TexCoord = new Vector2(u2, v1), Color = vertexColor };
+                vertices[2] = new VertexType { Position = new Vector2(left, bottom), TexCoord = new Vector2(u1, v2), Color = vertexColor };
+                vertices[3] = new VertexType { Position = new Vector2(right, bottom), TexCoord = new Vector2(u2, v2), Color = vertexColor };
+            }
             _vertexBuffer.Unlock();
 
             _device.SetRenderState(RenderState.AlphaBlendEnable, true);
-            _device.SetRenderState(RenderState.SourceBlend, SharpDX.Direct3D9.Blend.SourceAlpha);
-            _device.SetRenderState(RenderState.DestinationBlend, SharpDX.Direct3D9.Blend.InverseSourceAlpha);
-            _device.SetRenderState(RenderState.CullMode, Cull.None);
+            _device.SetRenderState(RenderState.SourceBlend, (int)Vortice.Direct3D9.Blend.SourceAlpha);
+            _device.SetRenderState(RenderState.DestinationBlend, (int)Vortice.Direct3D9.Blend.InverseSourceAlpha);
+            _device.SetRenderState(RenderState.CullMode, (int)Cull.None);
 
             _device.SetTexture(0, texture);
-            _device.SetSamplerState(0, SamplerState.AddressU, TextureAddress.Clamp);
-            _device.SetSamplerState(0, SamplerState.AddressV, TextureAddress.Clamp);
-            _device.SetSamplerState(0, SamplerState.MinFilter, TextureFilter.Point);
-            _device.SetSamplerState(0, SamplerState.MagFilter, TextureFilter.Point);
-            _device.SetSamplerState(0, SamplerState.MipFilter, TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.AddressU, (int)TextureAddress.Clamp);
+            _device.SetSamplerState(0, SamplerState.AddressV, (int)TextureAddress.Clamp);
+            _device.SetSamplerState(0, SamplerState.MinFilter, (int)TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.MagFilter, (int)TextureFilter.Point);
+            _device.SetSamplerState(0, SamplerState.MipFilter, (int)TextureFilter.Point);
 
             _device.VertexDeclaration = _vertexDeclaration;
             _device.SetStreamSource(0, _vertexBuffer, 0, Marshal.SizeOf<VertexType>());
@@ -351,11 +360,12 @@ namespace Client.Rendering.SharpDXD3D9
             _device.DrawPrimitives(PrimitiveType.TriangleStrip, 0, 2);
 
             stateBlock.Apply();
+            stateBlock.Dispose();
         }
 
-        private void UpdateMatrix(NumericsMatrix3x2 transform, int backBufferWidth, int backBufferHeight)
+        private void UpdateMatrix(Matrix3x2 transform, int backBufferWidth, int backBufferHeight)
         {
-            Matrix projection = Matrix.Identity;
+            Matrix4x4 projection = Matrix4x4.Identity;
             projection.M11 = 2f / backBufferWidth;
             projection.M22 = -2f / backBufferHeight;
 
@@ -365,7 +375,7 @@ namespace Client.Rendering.SharpDXD3D9
             projection.M41 = -1f - halfPixelX;
             projection.M42 = 1f + halfPixelY;
 
-            Matrix world = Matrix.Identity;
+            Matrix4x4 world = Matrix4x4.Identity;
             world.M11 = transform.M11;
             world.M12 = transform.M12;
             world.M21 = transform.M21;
@@ -373,23 +383,66 @@ namespace Client.Rendering.SharpDXD3D9
             world.M41 = transform.M31;
             world.M42 = transform.M32;
 
-            Matrix final = Matrix.Multiply(world, projection);
-            final = Matrix.Transpose(final);
+            Matrix4x4 final = Matrix4x4.Multiply(world, projection);
+            final = Matrix4x4.Transpose(final);
 
-            _device.SetVertexShaderConstant(0, final.ToArray());
+            unsafe
+            {
+                float* matrixData = stackalloc float[16];
+                matrixData[0] = final.M11; matrixData[1] = final.M12; matrixData[2] = final.M13; matrixData[3] = final.M14;
+                matrixData[4] = final.M21; matrixData[5] = final.M22; matrixData[6] = final.M23; matrixData[7] = final.M24;
+                matrixData[8] = final.M31; matrixData[9] = final.M32; matrixData[10] = final.M33; matrixData[11] = final.M34;
+                matrixData[12] = final.M41; matrixData[13] = final.M42; matrixData[14] = final.M43; matrixData[15] = final.M44;
+                
+                _device.SetVertexShaderConstantF(0, new IntPtr(matrixData), 4);
+            }
         }
 
         private void UpdateOutlineConstants(int texWidth, int texHeight, Color4 outlineColor, float outlineThickness, float u1, float v1, float u2, float v2)
         {
-            _device.SetPixelShaderConstant(4, new[] { outlineColor.Red, outlineColor.Green, outlineColor.Blue, outlineColor.Alpha });
-            _device.SetPixelShaderConstant(5, new[] { texWidth, texHeight, outlineThickness, 0f });
-            _device.SetPixelShaderConstant(6, new[] { u1, v1, u2, v2 });
+            unsafe
+            {
+                float* colorData = stackalloc float[4];
+                colorData[0] = outlineColor.R;
+                colorData[1] = outlineColor.G;
+                colorData[2] = outlineColor.B;
+                colorData[3] = outlineColor.A;
+                _device.SetPixelShaderConstantF(4, new IntPtr(colorData), 1);
+
+                float* texInfoData = stackalloc float[4];
+                texInfoData[0] = texWidth;
+                texInfoData[1] = texHeight;
+                texInfoData[2] = outlineThickness;
+                texInfoData[3] = 0f;
+                _device.SetPixelShaderConstantF(5, new IntPtr(texInfoData), 1);
+
+                float* uvData = stackalloc float[4];
+                uvData[0] = u1;
+                uvData[1] = v1;
+                uvData[2] = u2;
+                uvData[3] = v2;
+                _device.SetPixelShaderConstantF(6, new IntPtr(uvData), 1);
+            }
         }
 
         private void UpdateShadowConstants(float imageLeft, float imageTop, float imageRight, float imageBottom, float shadowWidth, float shadowMaxOpacity)
         {
-            _device.SetPixelShaderConstant(4, new[] { imageLeft, imageTop, imageRight, imageBottom });
-            _device.SetPixelShaderConstant(5, new[] { shadowWidth, shadowMaxOpacity, 0f, 0f });
+            unsafe
+            {
+                float* boundsData = stackalloc float[4];
+                boundsData[0] = imageLeft;
+                boundsData[1] = imageTop;
+                boundsData[2] = imageRight;
+                boundsData[3] = imageBottom;
+                _device.SetPixelShaderConstantF(4, new IntPtr(boundsData), 1);
+
+                float* shadowData = stackalloc float[4];
+                shadowData[0] = shadowWidth;
+                shadowData[1] = shadowMaxOpacity;
+                shadowData[2] = 0f;
+                shadowData[3] = 0f;
+                _device.SetPixelShaderConstantF(5, new IntPtr(shadowData), 1);
+            }
         }
 
         public void Dispose()

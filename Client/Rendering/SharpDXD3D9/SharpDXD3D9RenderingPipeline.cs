@@ -1,27 +1,20 @@
 using Client.Controls;
 using Client.Envir;
 using Client.Extensions;
-using SharpDX;
-using SharpDX.Direct3D9;
+using Vortice.Direct3D9;
+using Vortice.Mathematics;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using DrawingFont = System.Drawing.Font;
-using DxColor = SharpDX.ColorBGRA;
-using DxMatrix = SharpDX.Matrix;
-using DxVector2 = SharpDX.Vector2;
 using GdiColor = System.Drawing.Color;
 using GdiPoint = System.Drawing.Point;
 using GdiRectangle = System.Drawing.Rectangle;
 using GdiRectangleF = System.Drawing.RectangleF;
-using NumericsMatrix3x2 = System.Numerics.Matrix3x2;
-using NumericsVector3 = System.Numerics.Vector3;
-using RawColorBGRA = SharpDX.Mathematics.Interop.RawColorBGRA;
-using RawRectangle = SharpDX.Mathematics.Interop.RawRectangle;
-using RawVector3 = SharpDX.Mathematics.Interop.RawVector3;
 
 namespace Client.Rendering.SharpDXD3D9
 {
@@ -99,7 +92,7 @@ namespace Client.Rendering.SharpDXD3D9
             {
                 SharpDXD3D9Manager.AttemptReset();
 
-                if (SharpDXD3D9Manager.Device == null || SharpDXD3D9Manager.Device.IsDisposed)
+                if (SharpDXD3D9Manager.Device == null || SharpDXD3D9Manager.Device.Disposed)
                 {
                     return false;
                 }
@@ -110,7 +103,7 @@ namespace Client.Rendering.SharpDXD3D9
                     return false;
                 }
 
-                SharpDXD3D9Manager.Device.Clear(ClearFlags.Target, ToDxColor(GdiColor.Black), 1, 0);
+                SharpDXD3D9Manager.Device.Clear(ClearFlags.Target, new Vortice.Mathematics.Color(0, 0, 0, 255), 1, 0);
                 SharpDXD3D9Manager.Device.BeginScene();
                 SharpDXD3D9Manager.Sprite.Begin(SpriteFlags.AlphaBlend);
 
@@ -122,7 +115,7 @@ namespace Client.Rendering.SharpDXD3D9
 
                 return true;
             }
-            catch (SharpDXException ex)
+            catch (Exception ex)
             {
                 SharpDXD3D9Manager.DeviceLost = true;
                 CEnvir.SaveException(ex);
@@ -217,10 +210,11 @@ namespace Client.Rendering.SharpDXD3D9
             if (!surface.IsValid)
                 throw new ArgumentException("A valid surface handle is required.", nameof(surface));
 
-            if (surface.NativeHandle is not Surface dxSurface)
-                throw new ArgumentException("Surface handle must wrap a SharpDX surface instance.", nameof(surface));
+            if (surface.NativeHandle is not IDirect3DSurface9 dxSurface)
+                throw new ArgumentException("Surface handle must wrap a Vortice surface instance.", nameof(surface));
 
-            SharpDXD3D9Manager.Device.ColorFill(dxSurface, ToRawRectangle(rectangle), color.ToColorBGRA());
+            var rect = new Rect(rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom);
+            SharpDXD3D9Manager.Device.ColorFill(dxSurface, rect, new Vortice.Mathematics.Color(color.R, color.G, color.B, color.A));
         }
 
         public void SetBlend(bool enabled, float rate, BlendMode mode)
@@ -259,17 +253,17 @@ namespace Client.Rendering.SharpDXD3D9
             if (points == null || points.Count < 2)
                 return;
 
-            if (SharpDXD3D9Manager.Line == null || SharpDXD3D9Manager.Line.IsDisposed)
+            if (SharpDXD3D9Manager.Line == null || SharpDXD3D9Manager.Line.Disposed)
                 return;
 
-            DxVector2[] converted = new DxVector2[points.Count];
+            Vector2[] converted = new Vector2[points.Count];
             for (int i = 0; i < points.Count; i++)
             {
                 LinePoint point = points[i];
-                converted[i] = new DxVector2(point.X, point.Y);
+                converted[i] = new Vector2(point.X, point.Y);
             }
 
-            SharpDXD3D9Manager.Line.Draw(converted, ToDxColor(colour));
+            SharpDXD3D9Manager.Line.Draw(converted, new Vortice.Mathematics.Color(colour.R, colour.G, colour.B, colour.A));
         }
 
         public void DrawTexture(RenderTexture texture, GdiRectangle sourceRectangle, GdiRectangleF destinationRectangle, GdiColor colour)
@@ -277,10 +271,10 @@ namespace Client.Rendering.SharpDXD3D9
             if (!texture.IsValid)
                 return;
 
-            if (texture.NativeHandle is not Texture dxTexture)
-                throw new ArgumentException("Texture handle must wrap a SharpDX texture instance.", nameof(texture));
+            if (texture.NativeHandle is not IDirect3DTexture9 dxTexture)
+                throw new ArgumentException("Texture handle must wrap a Vortice texture instance.", nameof(texture));
 
-            if (dxTexture.IsDisposed)
+            if (dxTexture.Disposed)
                 return;
 
             if (sourceRectangle.Width <= 0 || sourceRectangle.Height <= 0)
@@ -289,7 +283,7 @@ namespace Client.Rendering.SharpDXD3D9
             if (destinationRectangle.Width <= 0 || destinationRectangle.Height <= 0)
                 return;
 
-            DxMatrix original = SharpDXD3D9Manager.Sprite.Transform;
+            Matrix4x4 original = SharpDXD3D9Manager.Sprite.Transform;
 
             float scaleX = destinationRectangle.Width / sourceRectangle.Width;
             float scaleY = destinationRectangle.Height / sourceRectangle.Height;
@@ -302,18 +296,19 @@ namespace Client.Rendering.SharpDXD3D9
 
             try
             {
-                if (TryDrawSpriteEffect(texture, destinationRectangle, sourceRectangle, colour, NumericsMatrix3x2.Identity))
+                if (TryDrawSpriteEffect(texture, destinationRectangle, sourceRectangle, colour, Matrix3x2.Identity))
                     return;
 
-                SharpDXD3D9Manager.Sprite.Transform = DxMatrix.Scaling(scaleX, scaleY, 1F);
+                SharpDXD3D9Manager.Sprite.Transform = Matrix4x4.CreateScale(scaleX, scaleY, 1F);
 
                 float translateX = destinationRectangle.X / scaleX;
                 float translateY = destinationRectangle.Y / scaleY;
 
-                RawVector3 center = new RawVector3(0F, 0F, 0F);
-                RawVector3 translation = new RawVector3(translateX, translateY, 0F);
+                Vector3 center = new Vector3(0F, 0F, 0F);
+                Vector3 translation = new Vector3(translateX, translateY, 0F);
 
-                SharpDXD3D9Manager.Sprite.Draw(dxTexture, ToRawColor(colour), ToRawRectangle(sourceRectangle), center, translation);
+                var rect = new Rect(sourceRectangle.Left, sourceRectangle.Top, sourceRectangle.Right, sourceRectangle.Bottom);
+                SharpDXD3D9Manager.Sprite.Draw(dxTexture, rect, center, translation, new Vortice.Mathematics.Color(colour.R, colour.G, colour.B, colour.A));
             }
             finally
             {
@@ -321,22 +316,22 @@ namespace Client.Rendering.SharpDXD3D9
             }
         }
 
-        public void DrawTexture(RenderTexture texture, GdiRectangle? sourceRectangle, NumericsMatrix3x2 transform, NumericsVector3 center, NumericsVector3 translation, GdiColor colour)
+        public void DrawTexture(RenderTexture texture, GdiRectangle? sourceRectangle, Matrix3x2 transform, Vector3 center, Vector3 translation, GdiColor colour)
         {
             if (!texture.IsValid)
                 return;
 
-            if (texture.NativeHandle is not Texture dxTexture)
-                throw new ArgumentException("Texture handle must wrap a SharpDX texture instance.", nameof(texture));
+            if (texture.NativeHandle is not IDirect3DTexture9 dxTexture)
+                throw new ArgumentException("Texture handle must wrap a Vortice texture instance.", nameof(texture));
 
-            if (dxTexture.IsDisposed)
+            if (dxTexture.Disposed)
                 return;
 
-            NumericsMatrix3x2 finalTransform = transform;
+            Matrix3x2 finalTransform = transform;
 
             if (center.X != 0 || center.Y != 0)
             {
-                finalTransform = NumericsMatrix3x2.CreateTranslation(-center.X, -center.Y) * finalTransform;
+                finalTransform = Matrix3x2.CreateTranslation(-center.X, -center.Y) * finalTransform;
             }
 
             finalTransform.M31 += translation.X;
@@ -349,8 +344,8 @@ namespace Client.Rendering.SharpDXD3D9
             if (TryDrawSpriteEffect(texture, new GdiRectangleF(0, 0, width, height), sourceRectangle, colour, finalTransform))
                 return;
 
-            DxMatrix original = SharpDXD3D9Manager.Sprite.Transform;
-            DxMatrix converted = new DxMatrix
+            Matrix4x4 original = SharpDXD3D9Manager.Sprite.Transform;
+            Matrix4x4 converted = new Matrix4x4
             {
                 M11 = transform.M11,
                 M12 = transform.M12,
@@ -372,29 +367,31 @@ namespace Client.Rendering.SharpDXD3D9
 
             SharpDXD3D9Manager.Sprite.Transform = converted;
 
-            var dxCenter = new RawVector3(center.X, center.Y, center.Z);
-            var dxTranslation = new RawVector3(translation.X, translation.Y, translation.Z);
+            var dxCenter = center;
+            var dxTranslation = translation;
+            var dxColor = new Vortice.Mathematics.Color(colour.R, colour.G, colour.B, colour.A);
 
             if (sourceRectangle.HasValue)
             {
-                SharpDXD3D9Manager.Sprite.Draw(dxTexture, ToRawColor(colour), ToRawRectangle(sourceRectangle.Value), dxCenter, dxTranslation);
+                var rect = new Rect(sourceRectangle.Value.Left, sourceRectangle.Value.Top, sourceRectangle.Value.Right, sourceRectangle.Value.Bottom);
+                SharpDXD3D9Manager.Sprite.Draw(dxTexture, rect, dxCenter, dxTranslation, dxColor);
             }
             else
             {
-                SharpDXD3D9Manager.Sprite.Draw(dxTexture, ToRawColor(colour), null, dxCenter, dxTranslation);
+                SharpDXD3D9Manager.Sprite.Draw(dxTexture, null, dxCenter, dxTranslation, dxColor);
             }
 
             SharpDXD3D9Manager.Sprite.Transform = original;
         }
 
-        private bool TryDrawSpriteEffect(RenderTexture texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, NumericsMatrix3x2 transform)
+        private bool TryDrawSpriteEffect(RenderTexture texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, Matrix3x2 transform)
         {
             var effect = RenderingPipelineManager.GetSpriteShaderEffect();
 
             if (!effect.HasValue || SharpDXD3D9Manager.SpriteRenderer == null)
                 return false;
 
-            if (texture.NativeHandle is not Texture dxTexture || dxTexture.IsDisposed)
+            if (texture.NativeHandle is not IDirect3DTexture9 dxTexture || dxTexture.Disposed)
                 return false;
 
             switch (effect.Value.Kind)
@@ -414,14 +411,14 @@ namespace Client.Rendering.SharpDXD3D9
             return false;
         }
 
-        private void TryDrawOutlineEffect(Texture texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, NumericsMatrix3x2 transform, RenderingPipelineManager.OutlineEffectSettings outline)
+        private void TryDrawOutlineEffect(IDirect3DTexture9 texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, Matrix3x2 transform, RenderingPipelineManager.OutlineEffectSettings outline)
         {
             if (SharpDXD3D9Manager.SpriteRenderer == null || !SharpDXD3D9Manager.SpriteRenderer.SupportsOutlineShader)
                 return;
 
             SharpDXD3D9Manager.Sprite.Flush();
 
-            var outlineColor = new Color4(
+            var outlineColor = new Vortice.Mathematics.Color4(
                 outline.Colour.R / 255f,
                 outline.Colour.G / 255f,
                 outline.Colour.B / 255f,
@@ -437,7 +434,7 @@ namespace Client.Rendering.SharpDXD3D9
                 outline.Thickness);
         }
 
-        private void TryDrawGrayscaleEffect(Texture texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, NumericsMatrix3x2 transform)
+        private void TryDrawGrayscaleEffect(IDirect3DTexture9 texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, Matrix3x2 transform)
         {
             if (SharpDXD3D9Manager.SpriteRenderer == null)
                 return;
@@ -452,7 +449,7 @@ namespace Client.Rendering.SharpDXD3D9
                 transform);
         }
 
-        private void TryDrawDropShadowEffect(Texture texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, NumericsMatrix3x2 transform, RenderingPipelineManager.DropShadowEffectSettings dropShadow)
+        private void TryDrawDropShadowEffect(IDirect3DTexture9 texture, GdiRectangleF geometry, GdiRectangle? sourceRectangle, GdiColor colour, Matrix3x2 transform, RenderingPipelineManager.DropShadowEffectSettings dropShadow)
         {
             if (SharpDXD3D9Manager.SpriteRenderer == null || !SharpDXD3D9Manager.SpriteRenderer.SupportsDropShadowShader)
                 return;
@@ -461,7 +458,7 @@ namespace Client.Rendering.SharpDXD3D9
 
             var shadowBounds = dropShadow.VisibleBounds ?? geometry;
 
-            var shadowColor = new Color4(
+            var shadowColor = new Vortice.Mathematics.Color4(
                 dropShadow.Colour.R / 255f,
                 dropShadow.Colour.G / 255f,
                 dropShadow.Colour.B / 255f,
@@ -481,7 +478,7 @@ namespace Client.Rendering.SharpDXD3D9
 
         public RenderSurface GetCurrentSurface()
         {
-            Surface current = SharpDXD3D9Manager.CurrentSurface;
+            IDirect3DSurface9 current = SharpDXD3D9Manager.CurrentSurface;
             if (current == null)
                 throw new InvalidOperationException("Current surface is not available.");
 
@@ -493,15 +490,15 @@ namespace Client.Rendering.SharpDXD3D9
             if (!surface.IsValid)
                 throw new ArgumentException("A valid surface handle is required.", nameof(surface));
 
-            if (surface.NativeHandle is not Surface dxSurface)
-                throw new ArgumentException("Surface handle must wrap a SharpDX surface instance.", nameof(surface));
+            if (surface.NativeHandle is not IDirect3DSurface9 dxSurface)
+                throw new ArgumentException("Surface handle must wrap a Vortice surface instance.", nameof(surface));
 
             SharpDXD3D9Manager.SetSurface(dxSurface);
         }
 
         public RenderSurface GetScratchSurface()
         {
-            Surface scratchSurface = SharpDXD3D9Manager.ScratchSurface;
+            IDirect3DSurface9 scratchSurface = SharpDXD3D9Manager.ScratchSurface;
             if (scratchSurface == null)
                 throw new InvalidOperationException("Scratch surface is not available.");
 
@@ -510,7 +507,7 @@ namespace Client.Rendering.SharpDXD3D9
 
         public RenderTexture GetScratchTexture()
         {
-            Texture scratchTexture = SharpDXD3D9Manager.ScratchTexture;
+            IDirect3DTexture9 scratchTexture = SharpDXD3D9Manager.ScratchTexture;
             if (scratchTexture == null)
                 throw new InvalidOperationException("Scratch texture is not available.");
 
@@ -519,8 +516,8 @@ namespace Client.Rendering.SharpDXD3D9
 
         public RenderTargetResource CreateRenderTarget(Size size)
         {
-            Texture texture = new Texture(SharpDXD3D9Manager.Device, size.Width, size.Height, 1, Usage.RenderTarget, Format.A8R8G8B8, Pool.Default);
-            Surface surface = texture.GetSurfaceLevel(0);
+            IDirect3DTexture9 texture = SharpDXD3D9Manager.Device.CreateTexture(size.Width, size.Height, 1, Usage.RenderTarget, Format.A8R8G8B8, Pool.Default);
+            IDirect3DSurface9 surface = texture.GetSurfaceLevel(0);
 
             return RenderTargetResource.From(RenderTexture.From(texture), RenderSurface.From(surface));
         }
@@ -530,10 +527,10 @@ namespace Client.Rendering.SharpDXD3D9
             if (!renderTarget.IsValid)
                 return;
 
-            if (renderTarget.Surface.NativeHandle is Surface surface && !surface.IsDisposed)
+            if (renderTarget.Surface.NativeHandle is IDirect3DSurface9 surface && !surface.Disposed)
                 surface.Dispose();
 
-            if (renderTarget.Texture.NativeHandle is Texture texture && !texture.IsDisposed)
+            if (renderTarget.Texture.NativeHandle is IDirect3DTexture9 texture && !texture.Disposed)
                 texture.Dispose();
         }
 
@@ -548,15 +545,15 @@ namespace Client.Rendering.SharpDXD3D9
 
             if (regions != null && regions.Length > 0)
             {
-                RawRectangle[] dxRegions = new RawRectangle[regions.Length];
+                Rect[] dxRegions = new Rect[regions.Length];
                 for (int i = 0; i < regions.Length; i++)
-                    dxRegions[i] = ToRawRectangle(regions[i]);
+                    dxRegions[i] = new Rect(regions[i].Left, regions[i].Top, regions[i].Right, regions[i].Bottom);
 
-                SharpDXD3D9Manager.Device.Clear(dxFlags, ToDxColor(colour), z, stencil, dxRegions);
+                SharpDXD3D9Manager.Device.Clear(dxFlags, new Vortice.Mathematics.Color(colour.R, colour.G, colour.B, colour.A), z, stencil, dxRegions);
             }
             else
             {
-                SharpDXD3D9Manager.Device.Clear(dxFlags, ToDxColor(colour), z, stencil);
+                SharpDXD3D9Manager.Device.Clear(dxFlags, new Vortice.Mathematics.Color(colour.R, colour.G, colour.B, colour.A), z, stencil);
             }
         }
 
@@ -567,23 +564,23 @@ namespace Client.Rendering.SharpDXD3D9
 
         public RenderTexture CreateTexture(Size size, RenderTextureFormat format, RenderTextureUsage usage, RenderTexturePool pool)
         {
-            Texture texture = new Texture(SharpDXD3D9Manager.Device, size.Width, size.Height, 1, ConvertUsage(usage), ConvertFormat(format), ConvertPool(pool));
+            IDirect3DTexture9 texture = SharpDXD3D9Manager.Device.CreateTexture(size.Width, size.Height, 1, ConvertUsage(usage), ConvertFormat(format), ConvertPool(pool));
             return RenderTexture.From(texture);
         }
 
         public void ReleaseTexture(RenderTexture texture)
         {
-            if (texture.NativeHandle is Texture dxTexture && !dxTexture.IsDisposed)
+            if (texture.NativeHandle is IDirect3DTexture9 dxTexture && !dxTexture.Disposed)
                 dxTexture.Dispose();
         }
 
         public TextureLock LockTexture(RenderTexture texture, TextureLockMode mode)
         {
-            if (texture.NativeHandle is not Texture dxTexture)
-                throw new InvalidOperationException("SharpDX texture handle expected.");
+            if (texture.NativeHandle is not IDirect3DTexture9 dxTexture)
+                throw new InvalidOperationException("Vortice texture handle expected.");
 
             LockFlags flags = ConvertLockFlags(mode);
-            DataRectangle rect = dxTexture.LockRectangle(0, flags);
+            var rect = dxTexture.LockRectangle(0, flags);
 
             return TextureLock.From(rect.DataPointer, rect.Pitch, () =>
             {
@@ -637,7 +634,7 @@ namespace Client.Rendering.SharpDXD3D9
 
         public RenderTexture GetLightTexture()
         {
-            Texture lightTexture = SharpDXD3D9Manager.LightTexture;
+            IDirect3DTexture9 lightTexture = SharpDXD3D9Manager.LightTexture;
             return RenderTexture.From(lightTexture);
         }
 
@@ -648,8 +645,8 @@ namespace Client.Rendering.SharpDXD3D9
 
         public RenderTexture GetPoisonTexture()
         {
-            Texture poisonTexture = SharpDXD3D9Manager.PoisonTexture;
-            if (poisonTexture == null || poisonTexture.IsDisposed)
+            IDirect3DTexture9 poisonTexture = SharpDXD3D9Manager.PoisonTexture;
+            if (poisonTexture == null || poisonTexture.Disposed)
                 throw new InvalidOperationException("Poison texture has not been initialized.");
 
             return RenderTexture.From(poisonTexture);
@@ -657,8 +654,8 @@ namespace Client.Rendering.SharpDXD3D9
 
         public Size GetPoisonTextureSize()
         {
-            Texture poisonTexture = SharpDXD3D9Manager.PoisonTexture;
-            if (poisonTexture == null || poisonTexture.IsDisposed)
+            IDirect3DTexture9 poisonTexture = SharpDXD3D9Manager.PoisonTexture;
+            if (poisonTexture == null || poisonTexture.Disposed)
                 throw new InvalidOperationException("Poison texture has not been initialized.");
 
             SurfaceDescription description = poisonTexture.GetLevelDescription(0);
@@ -667,7 +664,7 @@ namespace Client.Rendering.SharpDXD3D9
 
         public RenderTexture GetColourPaletteTexture()
         {
-            Texture palette = SharpDXD3D9Manager.ColourPallete;
+            IDirect3DTexture9 palette = SharpDXD3D9Manager.ColourPallete;
             return RenderTexture.From(palette);
         }
 
@@ -699,40 +696,13 @@ namespace Client.Rendering.SharpDXD3D9
                 _ => TextureFilter.Point
             };
 
-            SharpDXD3D9Manager.Device.SetSamplerState(0, SamplerState.MinFilter, filter);
+            SharpDXD3D9Manager.Device.SetSamplerState(0, SamplerState.MinFilter, (int)filter);
             _currentFilter = mode;
         }
 
         public void Shutdown()
         {
             SharpDXD3D9Manager.Unload();
-        }
-
-        private static DxColor ToDxColor(GdiColor colour)
-        {
-            return new DxColor
-            {
-                R = colour.R,
-                G = colour.G,
-                B = colour.B,
-                A = colour.A
-            };
-        }
-
-        private static RawColorBGRA ToRawColor(GdiColor colour)
-        {
-            return new RawColorBGRA
-            {
-                R = colour.R,
-                G = colour.G,
-                B = colour.B,
-                A = colour.A
-            };
-        }
-
-        private static RawRectangle ToRawRectangle(GdiRectangle rectangle)
-        {
-            return new RawRectangle(rectangle.X, rectangle.Y, rectangle.Right, rectangle.Bottom);
         }
 
         private static ClearFlags ConvertClearFlags(RenderClearFlags flags)
