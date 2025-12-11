@@ -5,6 +5,13 @@ using System.Drawing;
 using System.Linq;
 using System.Numerics;
 using Color4 = SharpDX.Color4;
+using VorticeD3D9Device = Vortice.Direct3D9.IDirect3DDevice9;
+using VorticeD3D9Sprite = Vortice.Direct3D9.ID3DXSprite;
+using VorticeD3D9Line = Vortice.Direct3D9.ID3DXLine;
+using VorticeD3D9Texture = Vortice.Direct3D9.IDirect3DTexture9;
+using VorticeClearFlags = Vortice.Direct3D9.ClearFlags;
+using VorticeColor = Vortice.Mathematics.Color;
+using VorticeRect = Vortice.Direct3D9.Rect;
 
 namespace Client.Extensions;
 
@@ -144,5 +151,72 @@ public static class SharpDXColorExtensions
         if (value >= 1f) return 255;
 
         return (byte)Math.Round(value * 255f);
+    }
+}
+
+// Vortice.Direct3D9 Extensions
+public static class VorticeD3D9Extensions
+{
+    public static void Draw(this VorticeD3D9Sprite sprite, VorticeD3D9Texture texture, VorticeRect? sourceRectangle, Vector3 center, Vector3 position, VorticeColor color)
+    {
+        ArgumentNullException.ThrowIfNull(sprite);
+        ArgumentNullException.ThrowIfNull(texture);
+
+        sprite.Draw(texture, sourceRectangle, center, position, color);
+    }
+
+    public static void Draw(this VorticeD3D9Sprite sprite, VorticeD3D9Texture texture, Rectangle? sourceRectangle, Vector3 center, Vector3 position, Color color)
+    {
+        ArgumentNullException.ThrowIfNull(sprite);
+        ArgumentNullException.ThrowIfNull(texture);
+
+        VorticeRect? rect = sourceRectangle.HasValue ? new VorticeRect(sourceRectangle.Value.Left, sourceRectangle.Value.Top, sourceRectangle.Value.Right, sourceRectangle.Value.Bottom) : null;
+        VorticeColor vorticeColor = new VorticeColor(color.R, color.G, color.B, color.A);
+        
+        sprite.Draw(texture, rect, center, position, vorticeColor);
+    }
+
+    public static void Draw(this VorticeD3D9Line line, Vector2[] vertexList, VorticeColor color)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        ArgumentNullException.ThrowIfNull(vertexList);
+
+        line.Draw(vertexList, color);
+    }
+
+    public static void Draw(this VorticeD3D9Line line, Vector2[] vertexList, Color color)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        ArgumentNullException.ThrowIfNull(vertexList);
+
+        VorticeColor vorticeColor = new VorticeColor(color.R, color.G, color.B, color.A);
+        line.Draw(vertexList, vorticeColor);
+    }
+
+    public static void Clear(this VorticeD3D9Device device, VorticeClearFlags flags, Color color, float z, int stencil)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        VorticeColor vorticeColor = new VorticeColor(color.R, color.G, color.B, color.A);
+        device.Clear(flags, vorticeColor, z, stencil);
+    }
+
+    public static void Clear(this VorticeD3D9Device device, VorticeClearFlags flags, int colorArgb, float z, int stencil)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        Color color = Color.FromArgb(colorArgb);
+        VorticeColor vorticeColor = new VorticeColor(color.R, color.G, color.B, color.A);
+        device.Clear(flags, vorticeColor, z, stencil);
+    }
+
+    public static void Clear(this VorticeD3D9Device device, VorticeClearFlags flags, Color color, float z, int stencil, Rectangle[] rectangles)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        VorticeRect[] vorticeRects = rectangles?.Select(rectangle => new VorticeRect(rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom)).ToArray();
+        VorticeColor vorticeColor = new VorticeColor(color.R, color.G, color.B, color.A);
+
+        device.Clear(flags, vorticeColor, z, stencil, vorticeRects);
     }
 }
