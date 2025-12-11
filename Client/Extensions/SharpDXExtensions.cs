@@ -1,5 +1,5 @@
-using SharpDX.Direct3D9;
-using SharpDX.Mathematics.Interop;
+using Vortice.Direct3D9;
+using Vortice.Mathematics;
 using System;
 using System.Drawing;
 using System.Linq;
@@ -17,32 +17,32 @@ namespace Client.Extensions;
 
 public static class SharpDXExtensions
 {
-    public static void Draw(this Sprite sprite, Texture texture, Rectangle? sourceRectangle, Vector3? center, Vector3? position, Color color)
+    public static void Draw(this Sprite sprite, IDirect3DTexture9 texture, Rectangle? sourceRectangle, Vector3? center, Vector3? position, Color color)
     {
         sprite.DrawInternal(texture, sourceRectangle, center, position, color.ToColorBGRA());
     }
 
-    public static void Draw(this Sprite sprite, Texture texture, Rectangle? sourceRectangle, Vector3? center, Vector3? position, Color4 color)
+    public static void Draw(this Sprite sprite, IDirect3DTexture9 texture, Rectangle? sourceRectangle, Vector3? center, Vector3? position, Color4 color)
     {
         sprite.DrawInternal(texture, sourceRectangle, center, position, color.ToColorBGRA());
     }
 
-    public static void Draw(this Sprite sprite, Texture texture, Vector3? center, Vector3? position, Color color)
+    public static void Draw(this Sprite sprite, IDirect3DTexture9 texture, Vector3? center, Vector3? position, Color color)
     {
         sprite.Draw(texture, null, center, position, color);
     }
 
-    public static void Draw(this Sprite sprite, Texture texture, Vector3? center, Vector3? position, Color4 color)
+    public static void Draw(this Sprite sprite, IDirect3DTexture9 texture, Vector3? center, Vector3? position, Color4 color)
     {
         sprite.Draw(texture, null, center, position, color);
     }
 
-    public static void Draw(this Sprite sprite, Texture texture, Color color)
+    public static void Draw(this Sprite sprite, IDirect3DTexture9 texture, Color color)
     {
         sprite.Draw(texture, null, null, null, color);
     }
 
-    public static void Draw(this Sprite sprite, Texture texture, Color4 color)
+    public static void Draw(this Sprite sprite, IDirect3DTexture9 texture, Color4 color)
     {
         sprite.Draw(texture, null, null, null, color);
     }
@@ -57,58 +57,46 @@ public static class SharpDXExtensions
         line.DrawInternal(vertexList, color.ToColorBGRA());
     }
 
-    public static void Clear(this Device device, ClearFlags flags, Color color, float z, int stencil)
+    public static void Clear(this IDirect3DDevice9 device, ClearFlags flags, Color color, float z, int stencil)
     {
         ArgumentNullException.ThrowIfNull(device);
 
-        device.Clear(flags, color.ToColorBGRA(), z, stencil);
+        device.Clear(0, null, flags, color.ToColorBGRA().Value, z, stencil);
     }
 
-    public static void Clear(this Device device, ClearFlags flags, int color, float z, int stencil)
+    public static void Clear(this IDirect3DDevice9 device, ClearFlags flags, int color, float z, int stencil)
     {
         ArgumentNullException.ThrowIfNull(device);
 
-        device.Clear(flags, Color.FromArgb(color).ToColorBGRA(), z, stencil);
+        device.Clear(0, null, flags, Color.FromArgb(color).ToColorBGRA().Value, z, stencil);
     }
 
-    public static void Clear(this Device device, ClearFlags flags, Color color, float z, int stencil, Rectangle[] rectangles)
+    public static void Clear(this IDirect3DDevice9 device, ClearFlags flags, Color color, float z, int stencil, Rectangle[] rectangles)
     {
         ArgumentNullException.ThrowIfNull(device);
 
-        RawRectangle[] rawRectangles = rectangles?.Select(rectangle => new RawRectangle(rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom)).ToArray();
+        Rect[] rects = rectangles?.Select(rectangle => new Rect(rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom)).ToArray();
 
-        device.Clear(flags, color.ToColorBGRA(), z, stencil, rawRectangles);
+        device.Clear(rects?.Length ?? 0, rects, flags, color.ToColorBGRA().Value, z, stencil);
     }
 
-    private static void DrawInternal(this Sprite sprite, Texture texture, Rectangle? sourceRectangle, Vector3? center, Vector3? position, RawColorBGRA color)
+    private static void DrawInternal(this Sprite sprite, IDirect3DTexture9 texture, Rectangle? sourceRectangle, Vector3? center, Vector3? position, ColorBgra color)
     {
         ArgumentNullException.ThrowIfNull(sprite);
         ArgumentNullException.ThrowIfNull(texture);
 
-        RawRectangle? rawRectangle = sourceRectangle.HasValue ? ToSharpDXRectangle(sourceRectangle.Value) : null;
-        RawVector3? rawCenter = center.HasValue ? ToSharpDXVector3(center.Value) : null;
-        RawVector3? rawPosition = position.HasValue ? ToSharpDXVector3(position.Value) : null;
+        Rect? rect = sourceRectangle.HasValue ? new Rect(sourceRectangle.Value.Left, sourceRectangle.Value.Top, sourceRectangle.Value.Right, sourceRectangle.Value.Bottom) : null;
 
-        sprite.Draw(texture, color, rawRectangle, rawCenter, rawPosition);
+        sprite.Draw(texture, color, rect, center, position);
     }
 
-    private static void DrawInternal(this Line line, Vector2[] vertexList, RawColorBGRA color)
+    private static void DrawInternal(this Line line, Vector2[] vertexList, ColorBgra color)
     {
         ArgumentNullException.ThrowIfNull(line);
         ArgumentNullException.ThrowIfNull(vertexList);
 
-        RawVector2[] raw = new RawVector2[vertexList.Length];
-        for (int i = 0; i < vertexList.Length; i++)
-        {
-            raw[i] = new RawVector2(vertexList[i].X, vertexList[i].Y);
-        }
-
-        line.Draw(raw, color);
+        line.Draw(vertexList, color);
     }
-
-    private static RawRectangle ToSharpDXRectangle(Rectangle rectangle) => new(rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom);
-
-    private static RawVector3 ToSharpDXVector3(Vector3 vector) => new(vector.X, vector.Y, vector.Z);
 }
 
 public static class SharpDXColorExtensions
@@ -125,24 +113,24 @@ public static class SharpDXColorExtensions
     public static Color ToColor(this Color4 color)
     {
         return Color.FromArgb(
-            ToByte(color.Alpha),
-            ToByte(color.Red),
-            ToByte(color.Green),
-            ToByte(color.Blue));
+            ToByte(color.A),
+            ToByte(color.R),
+            ToByte(color.G),
+            ToByte(color.B));
     }
 
-    public static RawColorBGRA ToColorBGRA(this Color color)
+    public static ColorBgra ToColorBGRA(this Color color)
     {
-        return new RawColorBGRA(color.B, color.G, color.R, color.A);
+        return new ColorBgra(color.B, color.G, color.R, color.A);
     }
 
-    public static RawColorBGRA ToColorBGRA(this Color4 color)
+    public static ColorBgra ToColorBGRA(this Color4 color)
     {
-        return new RawColorBGRA(
-            ToByte(color.Blue),
-            ToByte(color.Green),
-            ToByte(color.Red),
-            ToByte(color.Alpha));
+        return new ColorBgra(
+            ToByte(color.B),
+            ToByte(color.G),
+            ToByte(color.R),
+            ToByte(color.A));
     }
 
     private static byte ToByte(float value)
